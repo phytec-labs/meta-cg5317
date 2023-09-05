@@ -1,0 +1,49 @@
+* Lumissil CG5317
+
+The CG5317 is a serial-to-powerline bridge with a host interface of SPI.
+
+It is Ethernet over SPI.
+
+In order to use the CG5317 as SPI device it must be defined as a child of a
+SPI master in the device tree.
+
+Required properties:
+- compatible           : Should be "cg,cg5317"
+- reg                  : Should specify the SPI chip select to be used
+- interrupts-extended  : Two interrupts are needed:
+                         - rx_irq, must be of type rising edge (mode 1).
+                         - gp_irq, must be of type rising edge (mode 1).
+- interrupt-names      : Associated names must be: "gp_irq", "rx_irq"
+- spi-cpha             : Must be set
+- spi-lsb-first        : Must be set
+- spi-cpol             : Should be set if and only if cg5317 is in SPI MODE 3
+
+Optional properties:
+- spi-max-frequency : Maximum frequency of the SPI bus the chip can operate at.
+                      Numbers smaller than 1000000 or greater than 16000000
+                      are invalid. Missing the property will set the SPI
+                      frequency to 8000000 Hertz.
+- local-mac-address : Can be used to set mac address, if not used,
+                      mac address will be set randomly with OUI of Lumissil.
+
+SPI Example:
+
+/* stm32mp157a SPI master*/
+&spi2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi2_pins_b>;
+	cs-gpios = <&gpioi 0 0>;
+	status = "okay";
+         
+	cg5317: ethernet@0 {
+		status = "okay";
+		compatible = "cg,cg5317";
+		reg = <0x0>;
+		interrupts-extended = <&gpioh 12 IRQ_TYPE_EDGE_RISING>, <&gpioi 3 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "gp_irq", "rx_irq";
+		spi-cpha; /* SPI mode: CPHA=1 */
+		spi-lsb-first; /* SPI mode: lsb_first=1 */
+		spi-max-frequency = <8000000>; /* freq: 8 MHz */
+	};
+};
+
