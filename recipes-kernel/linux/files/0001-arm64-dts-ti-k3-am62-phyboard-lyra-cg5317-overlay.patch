@@ -1,35 +1,36 @@
-From 64b41e0802f51c6a11652e4f0daec80c2c3b1c31 Mon Sep 17 00:00:00 2001
-From: Garrett Giordano <ggiordano@phytec.com>
-Date: Thu, 18 May 2023 15:54:38 -0700
-Subject: [PATCH] arm64: dts: ti: k3-am62-phyboard-lyra: cg5317 Overlay
+From bd1ff08540d932e21bbaf7dde7dde269dfb615c8 Mon Sep 17 00:00:00 2001
+From: Spencer Black <sblack@phytec.com>
+Date: Mon, 2 Oct 2023 16:21:27 -0700
+Subject: [PATCH] arm64: dts: ti: k3-am62-phyboard-lyra: cg5317 overlay
 
 Add a device tree overlay for the cg5317 EVK.
 
 Signed-off-by: Garrett Giordano <ggiordano@phytec.com>
+Signed-off-by: Spencer Black <sblack@phytec.com>
 ---
  arch/arm64/boot/dts/ti/Makefile               |  1 +
- .../dts/ti/k3-am62-phyboard-lyra-cg5317.dts  | 49 +++++++++++++++++++
- 2 files changed, 50 insertions(+)
- create mode 100644 arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dts
+ .../dts/ti/k3-am62-phyboard-lyra-cg5317.dtso  | 53 +++++++++++++++++++
+ 2 files changed, 54 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso
 
 diff --git a/arch/arm64/boot/dts/ti/Makefile b/arch/arm64/boot/dts/ti/Makefile
-index 2cc7c04b2cec..7778064ac989 100644
+index 31c755623585..0cd33b7a06c7 100644
 --- a/arch/arm64/boot/dts/ti/Makefile
 +++ b/arch/arm64/boot/dts/ti/Makefile
-@@ -88,6 +88,7 @@ dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-vm016-mipi.dtbo
+@@ -34,6 +34,7 @@ dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-vm016-mipi.dtbo
  dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-oldi-lcd185.dtbo
- dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-rpmsg.dtbo
  dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-gpio-fan.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-m2-lwb5p.dtbo
 +dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-cg5317.dtbo
- dtb-$(CONFIG_ARCH_K3) += k3-am62-phycore-disable-spi-nor.dtbo
- dtb-$(CONFIG_ARCH_K3) += k3-am62-phycore-disable-rtc.dtbo
- dtb-$(CONFIG_ARCH_K3) += k3-am62-phycore-disable-eth-phy.dtbo
-diff --git a/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dts b/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dts
+ 
+ # Boards with AM62Ax SoC
+ k3-am62a7-sk-csi2-imx219-dtbs := k3-am62a7-sk.dtb k3-am62a7-sk-csi2-imx219.dtbo
+diff --git a/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso b/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso
 new file mode 100644
-index 000000000000..dab7d61bebb1
+index 000000000000..7082b886afdf
 --- /dev/null
-+++ b/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dts
-@@ -0,0 +1,48 @@
++++ b/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso
+@@ -0,0 +1,53 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) 2022 PHYTEC America LLC
@@ -40,7 +41,7 @@ index 000000000000..dab7d61bebb1
 +// Visit: https://www.lumissil.com/applications/communication/electric-vehicles-charging/vehicle-charging/is32cg5317 for details
 +
 +#include <dt-bindings/gpio/gpio.h>
-+#include <dt-bindings/pinctrl/k3.h>
++#include "k3-pinctrl.h"
 +
 +/dts-v1/;
 +/plugin/;
@@ -78,6 +79,12 @@ index 000000000000..dab7d61bebb1
 +           spi-max-frequency = <1000000>;
 +   };
 +};
++
++/* Override UART1 since it is enabled by default in the k3-am625-phyboard-lyra-rdk.dts */
++&main_uart1 {
++	status = "disable";
++};
+\ No newline at end of file
 -- 
 2.25.1
 

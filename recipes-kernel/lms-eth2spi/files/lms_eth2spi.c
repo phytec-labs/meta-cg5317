@@ -1166,7 +1166,11 @@ static void lms_rx_completion_handler(struct work_struct *work)
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 		skb->protocol = eth_type_trans(skb, skb->dev);
 
+#if KERNEL_VERSION(5, 18, 0) <=  LINUX_VERSION_CODE
+		ret = netif_rx(skb);
+#else
 		ret = netif_rx_ni(skb);
+#endif
 		if (ret == NET_RX_DROP) {
 			netdev_dbg(lms->net_dev, "rx packet of type %d was dropped",
 				   skb->protocol);
@@ -2706,6 +2710,8 @@ int lms_spi_probe(struct spi_device *spi)
 	int ret = 0, irq;
 #if  KERNEL_VERSION(5, 13, 0) > LINUX_VERSION_CODE
 	const char *mac;
+#else
+	u8 mac[ETH_ALEN] = { 0 };
 #endif
 	struct lms_get_CG2H_mailbox mailbox_output;
 
@@ -2976,14 +2982,19 @@ int lms_spi_probe(struct spi_device *spi)
 	lms->net_dev = lms_spi_devs;
 
 #if KERNEL_VERSION(5, 13, 0) <=  LINUX_VERSION_CODE
-	ret = of_get_mac_address(spi->dev.of_node, lms->net_dev->dev_addr);
+	ret = of_get_mac_address(spi->dev.of_node, mac);
 	if (ret) {
-		eth_hw_addr_random(lms->net_dev);
-		lms->net_dev->dev_addr[0] = LMS_OUI_0;
-		lms->net_dev->dev_addr[1] = LMS_OUI_1;
-		lms->net_dev->dev_addr[2] = LMS_OUI_2;
+		eth_random_addr(mac);
+		mac[0] = LMS_OUI_0;
+		mac[1] = LMS_OUI_1;
+		mac[2] = LMS_OUI_2;
 		dev_info(&spi->dev, "Using random MAC address: %pM\n",
-			 lms->net_dev->dev_addr);
+			 mac);
+#if KERNEL_VERSION(5, 15, 0) <=  LINUX_VERSION_CODE
+		eth_hw_addr_set(lms->net_dev, mac);
+#else
+		ether_addr_copy(lms->net_dev->dev_addr, mac);
+#endif
 	}
 #else
 	mac = of_get_mac_address(spi->dev.of_node);
@@ -3036,7 +3047,11 @@ int lms_spi_probe(struct spi_device *spi)
 	return 0;
 }
 
+#if KERNEL_VERSION(5, 18, 0) <=  LINUX_VERSION_CODE
+static void
+#else
 static int
+#endif
 lms_spi_remove(struct spi_device *spi)
 {
 	struct lms_spi *lms = spi_get_drvdata(spi);
@@ -3054,7 +3069,9 @@ lms_spi_remove(struct spi_device *spi)
 	gpio_free(lms->rx_gpio);
 	free_lms(lms);
 
+#if KERNEL_VERSION(5, 18, 0) >  LINUX_VERSION_CODE
 	return 0;
+#endif
 }
 
 static const struct spi_device_id lms_spi_id[] = {
