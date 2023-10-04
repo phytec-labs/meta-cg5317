@@ -1,7 +1,7 @@
 From bd1ff08540d932e21bbaf7dde7dde269dfb615c8 Mon Sep 17 00:00:00 2001
 From: Spencer Black <sblack@phytec.com>
 Date: Mon, 2 Oct 2023 16:21:27 -0700
-Subject: [PATCH] arm64: dts: ti: k3-am62-phyboard-lyra: cg5317 overlay
+Subject: [PATCH 1/2] arm64: dts: ti: k3-am62-phyboard-lyra: cg5317 overlay
 
 Add a device tree overlay for the cg5317 EVK.
 
