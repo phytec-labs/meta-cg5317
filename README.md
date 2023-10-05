@@ -4,11 +4,11 @@
 	3. Enabling and Testing Overlay
 
 # 1 - Introduction
-This repo holds the software necessary to enable SPI communication between the AM62/AM62A PHYTEC phyBOARD-Lyra carrier board and the Lumissil IS31CG5317/IS32CG5327 device.
+This repo holds the software necessary to enable SPI communication between PHYTEC's supported dev kits (AM62-Lyra / AM64-Electra) and the Lumissil IS31CG5317/IS32CG5327 device.
 
 There are two items included in this meta-layer.
 
-- **Device Tree Overlay** - contains the device tree changes that are needed to MUX the SPI pins on the PHYTEC AM62x expansion header (X17).
+- **Device Tree Overlay** - contains the device tree changes that are needed to MUX the SPI pins on the dev kit.
 
 - **Lumissil lms-eth2spi SPI Driver** - spi driver that will be built into the BSP.
 
@@ -24,21 +24,31 @@ git clone https://github.com/phytec-labs/meta-cg5317
 bitbake-layers add-layer meta-cg5317
 ```
 
-You can make sure the build was successful by checking to see if `k3-am62-phyboard-lyra-cg5317.dtbo` is present on the SD cards `/boot ` partition.
+You can make sure the build was successful by checking to see if `*-cg5317.dtbo` is present on the SD cards `/boot ` partition.
 
 # 3 - Enabling and Testing the Overlay
 
 1. Stop the boot sequence in u-boot and run the following commands to enable the device tree overlay.
 
+AM62
 ```bash
 => setenv overlays k3-am62-phyboard-lyra-cg5317.dtbo
 => saveenv
 => boot
 ```
+
+AM64
+```bash
+=> setenv overlays k3-am64-phyboard-electra-cg5317.dtbo
+=> saveenv
+=> boot
+```
+
 2. Check to see if PLC device connected successfully.
 ``` bash 
 dmesg | grep spi
 ```
+AM62 Example Output
 ``` bash
 root@phyboard-lyra-am62xx-2:~# dmesg | grep spi
 [    1.180349] spi-nor spi0.0: mt35xu512aba (65536 Kbytes)
