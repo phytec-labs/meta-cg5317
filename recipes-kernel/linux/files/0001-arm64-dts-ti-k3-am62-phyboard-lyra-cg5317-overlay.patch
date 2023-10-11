@@ -1,4 +1,4 @@
-From bd1ff08540d932e21bbaf7dde7dde269dfb615c8 Mon Sep 17 00:00:00 2001
+From 1e90299ec6a55c264f75cdab5e7baf09861b0e88 Mon Sep 17 00:00:00 2001
 From: Spencer Black <sblack@phytec.com>
 Date: Mon, 2 Oct 2023 16:21:27 -0700
 Subject: [PATCH 1/2] arm64: dts: ti: k3-am62-phyboard-lyra: cg5317 overlay
@@ -9,8 +9,8 @@ Signed-off-by: Garrett Giordano <ggiordano@phytec.com>
 Signed-off-by: Spencer Black <sblack@phytec.com>
 ---
  arch/arm64/boot/dts/ti/Makefile               |  1 +
- .../dts/ti/k3-am62-phyboard-lyra-cg5317.dtso  | 53 +++++++++++++++++++
- 2 files changed, 54 insertions(+)
+ .../dts/ti/k3-am62-phyboard-lyra-cg5317.dtso  | 54 +++++++++++++++++++
+ 2 files changed, 55 insertions(+)
  create mode 100644 arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso
 
 diff --git a/arch/arm64/boot/dts/ti/Makefile b/arch/arm64/boot/dts/ti/Makefile
@@ -27,10 +27,10 @@ index 31c755623585..0cd33b7a06c7 100644
  k3-am62a7-sk-csi2-imx219-dtbs := k3-am62a7-sk.dtb k3-am62a7-sk-csi2-imx219.dtbo
 diff --git a/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso b/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso
 new file mode 100644
-index 000000000000..7082b886afdf
+index 000000000000..002463ac8691
 --- /dev/null
 +++ b/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,54 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) 2022 PHYTEC America LLC
@@ -48,14 +48,15 @@ index 000000000000..7082b886afdf
 +
 +&main_pmx0 {
 +	main_spi0_pins_default: main-spi0-pins-default {
-+			pinctrl-single,pins = <
-+					AM62X_IOPAD(0x01bc, PIN_INPUT, 0)	 /* (A14) SPI0_CLK */
-+					AM62X_IOPAD(0x01b4, PIN_OUTPUT, 0)	 /* (A13) SPI0_CS0 */
-+					AM62X_IOPAD(0x01c0, PIN_OUTPUT, 0)	 /* (B13) SPI0_D0 */
-+					AM62X_IOPAD(0x01c4, PIN_INPUT, 0)	 /* (B14) SPI0_D1 */
-+					AM62X_IOPAD(0x194, PIN_INPUT, 7)	 /* (B19) MCASP0_AXR3.GPIO1_7 */
-+					AM62X_IOPAD(0x198, PIN_INPUT, 7)	 /* (A19) MCASP0_AXR2.GPIO1_8 */
-+			>;
++		pinctrl-single,pins = <
++			AM62X_IOPAD(0x01bc, PIN_INPUT, 0)	 /* (A14) SPI0_CLK */
++			AM62X_IOPAD(0x01b4, PIN_OUTPUT, 0)	 /* (A13) SPI0_CS0 */
++			AM62X_IOPAD(0x01c0, PIN_OUTPUT, 0)	 /* (B13) SPI0_D0 */
++			AM62X_IOPAD(0x01c4, PIN_INPUT, 0)	 /* (B14) SPI0_D1 */
++			AM62X_IOPAD(0x194, PIN_INPUT, 7)	 /* (B19) MCASP0_AXR3.GPIO1_7 */
++			AM62X_IOPAD(0x198, PIN_INPUT, 7)	 /* (A19) MCASP0_AXR2.GPIO1_8 */
++			AM62X_IOPAD(0x094, PIN_INPUT_PULLUP, 7)	 /* (N20) GPMC0_BE1N.GPIO0_36 */
++		>;
 +	};
 +};
 +
@@ -70,13 +71,13 @@ index 000000000000..7082b886afdf
 +	status = "okay";
 +
 +   cg5317: cg5317@0 {
-+           status = "okay";
-+           compatible = "cg,cg5317";
-+           reg = <0x0>;    /* CE0 */
-+           interrupts-extended = <&main_gpio1 8 0x1>, <&main_gpio1 7 0x1>; /* rising edge */
-+           interrupt-names = "gp_irq", "rx_irq";
-+           spi-cpha;       /* SPI mode: CPHA=1 */
-+           spi-max-frequency = <1000000>;
++		status = "okay";
++		compatible = "cg,cg5317";
++		reg = <0x0>;    /* CE0 */
++		interrupts-extended = <&main_gpio1 8 0x1>, <&main_gpio1 7 0x1>; /* rising edge */
++		interrupt-names = "gp_irq", "rx_irq";
++		spi-cpha;       /* SPI mode: CPHA=1 */
++		spi-max-frequency = <1000000>;
 +   };
 +};
 +
