@@ -1,0 +1,11 @@
+[Unit]
+Description=cg5317 Host Loading Service
+After=cg5317-bringup.service
+
+[Service]
+User=root
+Group=root
+ExecStart=/root/examples/host_loading_service/host_loading_service
+
+[Install]
+WantedBy=multi-user.target

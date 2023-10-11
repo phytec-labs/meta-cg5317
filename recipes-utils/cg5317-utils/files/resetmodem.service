@@ -1,0 +1,9 @@
+[Unit]
+
+[Service]
+ExecStart=/usr/bin/resetmodem.sh
+User=root
+
+[Install]
+WantedBy=default.target
+
