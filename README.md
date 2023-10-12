@@ -1,30 +1,42 @@
 # Table of Contents
 	1. Introduction
-	2. Adding the meta-cg5317 Layer to Your Build
+	2. Using the manifest.xml
 	3. Enabling and Testing Overlay
 
 # 1 - Introduction
-This repo holds the software necessary to enable SPI communication between PHYTEC's supported dev kits (AM62-Lyra / AM64-Electra) and the Lumissil IS31CG5317/IS32CG5327 device.
+This repo holds the software necessary to enable SPI communication between PHYTEC's supported dev kits (AM62-Lyra / AM64-Electra) and the Lumissil IS31CG5317/IS32CG5327 device. This package is still a work in progress.
 
-There are two items included in this meta-layer.
+There are some key items included in this meta-layer.
 
 - **Device Tree Overlay** - contains the device tree changes that are needed to MUX the SPI pins on the dev kit.
 
 - **Lumissil lms-eth2spi SPI Driver** - spi driver that will be built into the BSP.
 
-# 2 - Adding the meta-cg5317 Layer to Your Build
+- **Host Load Services** - firmware loading services that are used on bootup when the lms is in host-load moad.
 
-Enter the `/sources` directory of your yocto build and clone the meta-layer
+- **Manifest.xml** - a manifest that allows you to download all required software to build a BSP.
+
+# 2 - Using the Manifest
+
+The manifest is used to download all software required to build the Yocto BSP. This manifest uses the phyLinux software. More information can be found here:
+[phyLinux Installation](https://docs.phytec.com/latest/phycore-am62x/developingwithyocto/buildBSP.html#download-the-bsp-meta-layers)
+
+Begin by creating a directory for your BSP
 
 ```bash
-# Clone the meta-layer
-git clone https://github.com/phytec-labs/meta-cg5317
-
-# Add the layer to Yocto
-bitbake-layers add-layer meta-cg5317
+# Make directory
+mkdir ~/cg5317-bsp
 ```
 
-You can make sure the build was successful by checking to see if `*-cg5317.dtbo` is present on the SD cards `/boot ` partition.
+Download the manifest.xml file and place it into your BSP folder. Use the following to checkout this software into a BSP.
+```bash
+# Downloading Yocto BSP
+phyLinux init -x manifest.xml
+```
+
+You can then source and build your BSP.
+
+To make sure the build was successful by checking to see if `*-cg5317.dtbo` is present on the SD cards `/boot ` partition.
 
 # 3 - Enabling and Testing the Overlay
 
@@ -45,7 +57,7 @@ AM64
 ```
 
 2. Check to see if PLC device connected successfully.
-``` bash 
+``` bash
 dmesg | grep spi
 ```
 AM62 Example Output
@@ -63,3 +75,6 @@ root@phyboard-lyra-am62xx-2:~# dmesg | grep spi
 ```
 3. At this point the hardware is setup and the PLC device is connected and waiting for application software to write/read from the device. Refer to and contact Lumissil for specific device documentation:
 https://www.lumissil.com/applications/communication/electric-vehicles-charging/vehicle-charging/is32cg5317
+
+# 4 - Cross Compiling Host Software
+1. The host software needs to be cross compiled from the examples that are given by Lumissil. These are proprietary and not included in this meta-layer. The examples can be cross-compiled using the latest [Phytec SDK](https://download.phytec.de/Software/Linux/BSP-Yocto-AM62x/BSP-Yocto-Ampliphy-AM62x-PD23.2.0/sdk/ampliphy-xwayland/)
