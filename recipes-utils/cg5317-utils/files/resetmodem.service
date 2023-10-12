@@ -1,7 +1,7 @@
 [Unit]
 
 [Service]
-ExecStart=/usr/bin/resetmodem.sh
+ExecStart=/etc/systemd/system/resetmodem.sh
 User=root
 
 [Install]
