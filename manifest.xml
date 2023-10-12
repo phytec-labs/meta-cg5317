@@ -28,7 +28,7 @@
 		<ignorebaselayer />
 		<sublayer path="meta-summit-radio" />
 	</project>
-	<project name="phytec-labs/meta-cg5317" path="sources/meta-cg5317" remote="github" revision="f72879b88117eef690527ef8c9b6f5547c57e039" />
+	<project name="phytec-labs/meta-cg5317" path="sources/meta-cg5317" remote="github" revision="3e653e2da8b44106a929459a23718463a7b66565" />
 	<project name="poky" remote="yocto" path="sources/poky" revision="5d822b31316663c838c5864ab68b28fb3ca41351">
 		<ignorebaselayer />
 		<sublayer path="meta" />
