@@ -1,4 +1,4 @@
-From 1e90299ec6a55c264f75cdab5e7baf09861b0e88 Mon Sep 17 00:00:00 2001
+From e4f19f493c58b66f5974cb896b7f884937d1a468 Mon Sep 17 00:00:00 2001
 From: Spencer Black <sblack@phytec.com>
 Date: Mon, 2 Oct 2023 16:21:27 -0700
 Subject: [PATCH 1/2] arm64: dts: ti: k3-am62-phyboard-lyra: cg5317 overlay
@@ -14,17 +14,17 @@ Signed-off-by: Spencer Black <sblack@phytec.com>
  create mode 100644 arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso
 
 diff --git a/arch/arm64/boot/dts/ti/Makefile b/arch/arm64/boot/dts/ti/Makefile
-index 31c755623585..0cd33b7a06c7 100644
+index fc912d813e7f..cf66f85cea27 100644
 --- a/arch/arm64/boot/dts/ti/Makefile
 +++ b/arch/arm64/boot/dts/ti/Makefile
-@@ -34,6 +34,7 @@ dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-vm016-mipi.dtbo
- dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-oldi-lcd185.dtbo
- dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-gpio-fan.dtbo
+@@ -35,6 +35,7 @@ dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-gpio-fan.dtbo
  dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-m2-lwb5p.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-oldi-ac209a.dtbo
+ dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-oldi-ac200.dtbo
 +dtb-$(CONFIG_ARCH_K3) += k3-am62-phyboard-lyra-cg5317.dtbo
  
  # Boards with AM62Ax SoC
- k3-am62a7-sk-csi2-imx219-dtbs := k3-am62a7-sk.dtb k3-am62a7-sk-csi2-imx219.dtbo
+ k3-am62a7-sk-csi2-imx219-dtbs := k3-am62a7-sk.dtb k3-am62x-sk-csi2-imx219.dtbo
 diff --git a/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso b/arch/arm64/boot/dts/ti/k3-am62-phyboard-lyra-cg5317.dtso
 new file mode 100644
 index 000000000000..002463ac8691
