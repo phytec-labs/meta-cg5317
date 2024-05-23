@@ -54,10 +54,10 @@
 #include <linux/bitrev.h>
 
 /*! The default network device name used */
-#define LMS_DEFAULT_NETDEV_NAME "seth0"
+#define LMS_DEFAULT_NETDEV_NAME_PREFIX	"seth"
 
 /*! SPI clock speed */
-#define LMS_SPI_CLK_SPEED_MIN 1000000
+#define LMS_SPI_CLK_SPEED_MIN 250000
 #define LMS_SPI_CLK_SPEED_MAX 50000000
 #define LMS_SPI_DEFAULT_CLK_SPEED 8000000
 
@@ -76,6 +76,10 @@ static bool lms_force_spi_lsb_first_in_sw = false;
 module_param(lms_force_spi_lsb_first_in_sw, bool, 0);
 MODULE_PARM_DESC(lms_force_spi_lsb_first_in_sw, "Force lsb first over SPI to happen in SW even if HW supports it.");
 
+static DEFINE_MUTEX(lms_global_lock);
+static struct device *lms_root_device;
+static u32 lms_probe_counter;
+
 /*! tx timeout */
 #define LMS_SPI_TX_TIMEOUT (1 * HZ)
 
@@ -85,7 +89,7 @@ MODULE_PARM_DESC(lms_force_spi_lsb_first_in_sw, "Force lsb first over SPI to hap
 
 /*! Driver name and version */
 #define LMS_DRV_NAME "lms_eth2spi"
-#define LMS_SPI_DRV_VERSION "0.0.7"
+#define LMS_SPI_DRV_VERSION "0.0.8"
 
 /*! Minimal and maximal MTU */
 #define LMS_FRM_MIN_MTU (ETH_ZLEN - ETH_HLEN)
@@ -252,6 +256,7 @@ struct lms_spi_tx_rx_frame {
 
 /*! The main struct of the lms_eth2spi driver */
 struct lms_spi {
+	u32 probe_idx;
 	struct net_device *net_dev;
 	struct spi_device *spi_dev;
 	struct task_struct *spi_thread;
@@ -301,31 +306,28 @@ struct lms_spi {
 	struct lms_CG2H_mailbox CG2H_mailbox_two;
 	struct lms_CG2H_mailbox CG2H_mailbox_three;
 
-	struct lms_attr_wrapper *cg2h_read_zero_attr_wrapper;
-	struct lms_attr_wrapper *cg2h_timestamp_zero_attr_wrapper;
-	struct lms_attr_wrapper *cg2h_read_one_attr_wrapper;
-	struct lms_attr_wrapper *cg2h_timestamp_one_attr_wrapper;
-	struct lms_attr_wrapper *cg2h_read_two_attr_wrapper;
-	struct lms_attr_wrapper *cg2h_timestamp_two_attr_wrapper;
-	struct lms_attr_wrapper *cg2h_read_three_attr_wrapper;
-	struct lms_attr_wrapper *cg2h_timestamp_three_attr_wrapper;
+	struct lms_attr_wrapper cg2h_read_zero_attr_wrapper;
+	struct lms_attr_wrapper cg2h_timestamp_zero_attr_wrapper;
+	struct lms_attr_wrapper cg2h_read_one_attr_wrapper;
+	struct lms_attr_wrapper cg2h_timestamp_one_attr_wrapper;
+	struct lms_attr_wrapper cg2h_read_two_attr_wrapper;
+	struct lms_attr_wrapper cg2h_timestamp_two_attr_wrapper;
+	struct lms_attr_wrapper cg2h_read_three_attr_wrapper;
+	struct lms_attr_wrapper cg2h_timestamp_three_attr_wrapper;
 
-	struct lms_attr_wrapper *h2cg_write_zero_attr_wrapper;
-	struct lms_attr_wrapper *h2cg_status_zero_attr_wrapper;
-	struct lms_attr_wrapper *h2cg_write_one_attr_wrapper;
-	struct lms_attr_wrapper *h2cg_status_one_attr_wrapper;
-	struct lms_attr_wrapper *h2cg_write_two_attr_wrapper;
-	struct lms_attr_wrapper *h2cg_status_two_attr_wrapper;
-	struct lms_attr_wrapper *h2cg_write_three_attr_wrapper;
-	struct lms_attr_wrapper *h2cg_status_three_attr_wrapper;
+	struct lms_attr_wrapper h2cg_write_zero_attr_wrapper;
+	struct lms_attr_wrapper h2cg_status_zero_attr_wrapper;
+	struct lms_attr_wrapper h2cg_write_one_attr_wrapper;
+	struct lms_attr_wrapper h2cg_status_one_attr_wrapper;
+	struct lms_attr_wrapper h2cg_write_two_attr_wrapper;
+	struct lms_attr_wrapper h2cg_status_two_attr_wrapper;
+	struct lms_attr_wrapper h2cg_write_three_attr_wrapper;
+	struct lms_attr_wrapper h2cg_status_three_attr_wrapper;
 
-	struct lms_attr_wrapper *statistics_wrapper;
-	struct lms_attr_wrapper *modem_status_wrapper;
-#ifdef LMS_DEBUG
-	struct lms_attr_wrapper *debug_write_wrapper;
-	struct lms_attr_wrapper *debug_update_gp_irq_flag_wrapper;
-	struct lms_attr_wrapper *debug_read_irq_wrapper;
-#endif
+	struct lms_attr_wrapper statistics_wrapper;
+	struct lms_attr_wrapper modem_status_wrapper;
+	struct lms_attr_wrapper legacy_modem_status_wrapper;
+	bool legacy_modem_status_owner;
 
 	struct kobject *lms_eth2spi;
 	struct kobject *mailboxes;
@@ -1070,54 +1072,38 @@ static void
 lms_remove_mailboxes_sysfs(struct lms_spi *lms)
 {
 	sysfs_remove_file(lms->mailbox_cg2h_0,
-			  &lms->cg2h_read_zero_attr_wrapper->dev_attr.attr);
-	kfree(lms->cg2h_read_zero_attr_wrapper);
+			  &lms->cg2h_read_zero_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_cg2h_0,
-			  &lms->cg2h_timestamp_zero_attr_wrapper->dev_attr.attr);
-	kfree(lms->cg2h_timestamp_zero_attr_wrapper);
+			  &lms->cg2h_timestamp_zero_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_cg2h_1,
-			  &lms->cg2h_read_one_attr_wrapper->dev_attr.attr);
-	kfree(lms->cg2h_read_one_attr_wrapper);
+			  &lms->cg2h_read_one_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_cg2h_1,
-			  &lms->cg2h_timestamp_one_attr_wrapper->dev_attr.attr);
-	kfree(lms->cg2h_timestamp_one_attr_wrapper);
+			  &lms->cg2h_timestamp_one_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_cg2h_2,
-			  &lms->cg2h_read_two_attr_wrapper->dev_attr.attr);
-	kfree(lms->cg2h_read_two_attr_wrapper);
+			  &lms->cg2h_read_two_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_cg2h_2,
-			  &lms->cg2h_timestamp_two_attr_wrapper->dev_attr.attr);
-	kfree(lms->cg2h_timestamp_two_attr_wrapper);
+			  &lms->cg2h_timestamp_two_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_cg2h_3,
-			  &lms->cg2h_read_three_attr_wrapper->dev_attr.attr);
-	kfree(lms->cg2h_read_three_attr_wrapper);
+			  &lms->cg2h_read_three_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_cg2h_3,
-			  &lms->cg2h_timestamp_three_attr_wrapper->dev_attr.attr);
-	kfree(lms->cg2h_timestamp_three_attr_wrapper);
+			  &lms->cg2h_timestamp_three_attr_wrapper.dev_attr.attr);
 
 	sysfs_remove_file(lms->mailbox_h2cg_0,
-			  &lms->h2cg_write_zero_attr_wrapper->dev_attr.attr);
-	kfree(lms->h2cg_write_zero_attr_wrapper);
+			  &lms->h2cg_write_zero_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_h2cg_0,
-			  &lms->h2cg_status_zero_attr_wrapper->dev_attr.attr);
-	kfree(lms->h2cg_status_zero_attr_wrapper);
+			  &lms->h2cg_status_zero_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_h2cg_1,
-			  &lms->h2cg_write_one_attr_wrapper->dev_attr.attr);
-	kfree(lms->h2cg_write_one_attr_wrapper);
+			  &lms->h2cg_write_one_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_h2cg_1,
-			  &lms->h2cg_status_one_attr_wrapper->dev_attr.attr);
-	kfree(lms->h2cg_status_one_attr_wrapper);
+			  &lms->h2cg_status_one_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_h2cg_2,
-			  &lms->h2cg_write_two_attr_wrapper->dev_attr.attr);
-	kfree(lms->h2cg_write_two_attr_wrapper);
+			  &lms->h2cg_write_two_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_h2cg_2,
-			  &lms->h2cg_status_two_attr_wrapper->dev_attr.attr);
-	kfree(lms->h2cg_status_two_attr_wrapper);
+			  &lms->h2cg_status_two_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_h2cg_3,
-			  &lms->h2cg_write_three_attr_wrapper->dev_attr.attr);
-	kfree(lms->h2cg_write_three_attr_wrapper);
+			  &lms->h2cg_write_three_attr_wrapper.dev_attr.attr);
 	sysfs_remove_file(lms->mailbox_h2cg_3,
-			  &lms->h2cg_status_three_attr_wrapper->dev_attr.attr);
-	kfree(lms->h2cg_status_three_attr_wrapper);
+			  &lms->h2cg_status_three_attr_wrapper.dev_attr.attr);
 
 	kobject_put(lms->mailboxes);
 	kobject_put(lms->h2cg_mailboxes);
@@ -1425,6 +1411,34 @@ void lms_spi_netdev_tx_timeout(struct net_device *dev)
 	netif_wake_queue(dev);
 }
 
+static int lms_create_sysfs_file(struct lms_spi *lms, const char *name,
+				 struct kobject *dir,
+				 struct lms_attr_wrapper *attr_wrapper,
+				 ssize_t (*show)(struct kobject *kobj, struct kobj_attribute *attr,
+						 char *buf),
+				 ssize_t (*store)(struct kobject *kobj, struct kobj_attribute *attr,
+						  const char *buf, size_t count))
+{
+	attr_wrapper->lms = lms;
+	attr_wrapper->dev_attr.attr.name = name;
+	if (!store)
+		attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
+	else if (!show)
+		attr_wrapper->dev_attr.attr.mode = LMS_WRITE_ONLY_PERMISSION;
+	else
+		attr_wrapper->dev_attr.attr.mode = LMS_READ_WRITE_PERMISSION;
+	attr_wrapper->dev_attr.show = show;
+	attr_wrapper->dev_attr.store = store;
+	sysfs_attr_init(&attr_wrapper->dev_attr.attr);
+
+	if (sysfs_create_file(dir, &attr_wrapper->dev_attr.attr)) {
+		/* TODO */
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
 static ssize_t
 lms_cg2h_read_mailbox0_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
@@ -1680,185 +1694,109 @@ lms_h2cg_status_mailbox3_show(struct kobject *kobj, struct kobj_attribute *attr,
 static int
 lms_init_mailboxes_cg2h_0(struct kobject *mailbox_cg2h_0, struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/read */
-	lms->cg2h_read_zero_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->cg2h_read_zero_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate cg2h_read_zero_attr_wrapper\n");
-		return -ENOMEM;
+	int ret;
+
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/read */
+	ret = lms_create_sysfs_file(lms, "read", lms->mailbox_cg2h_0,
+				    &lms->cg2h_read_zero_attr_wrapper,
+				    lms_cg2h_read_mailbox0_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'read' in mailbox_cg2h_0");
+		return ret;
 	}
 
-	lms->cg2h_read_zero_attr_wrapper->lms = lms;
-	lms->cg2h_read_zero_attr_wrapper->dev_attr.attr.name = "read";
-	lms->cg2h_read_zero_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->cg2h_read_zero_attr_wrapper->dev_attr.show = lms_cg2h_read_mailbox0_show;
-	lms->cg2h_read_zero_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->cg2h_read_zero_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_cg2h_0, &lms->cg2h_read_zero_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file read in mailbox_cg2h_0\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/timestamp */
+	ret = lms_create_sysfs_file(lms, "timestamp", lms->mailbox_cg2h_0,
+				    &lms->cg2h_timestamp_zero_attr_wrapper,
+				    lms_cg2h_timestamp_mailbox0_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'timestamp' in mailbox_cg2h_0");
+		sysfs_remove_file(lms->mailbox_cg2h_0,
+				  &lms->cg2h_read_zero_attr_wrapper.dev_attr.attr);
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/timestamp */
-	lms->cg2h_timestamp_zero_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->cg2h_timestamp_zero_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate cg2h_timestamp_zero_attr_wrapper\n");
-		return -ENOMEM;
-	}
-
-	lms->cg2h_timestamp_zero_attr_wrapper->lms = lms;
-	lms->cg2h_timestamp_zero_attr_wrapper->dev_attr.attr.name = "timestamp";
-	lms->cg2h_timestamp_zero_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->cg2h_timestamp_zero_attr_wrapper->dev_attr.show = lms_cg2h_timestamp_mailbox0_show;
-	lms->cg2h_timestamp_zero_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->cg2h_timestamp_zero_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_cg2h_0,
-			      &lms->cg2h_timestamp_zero_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file timestamp in mailbox_cg2h_0\n");
-		return -ENOMEM;
-	}
-
-	return 0;
+	return ret;
 }
 
 static int
 lms_init_mailboxes_cg2h_1(struct kobject *mailbox_cg2h_1, struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/read */
-	lms->cg2h_read_one_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->cg2h_read_one_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate cg2h_read_one_attr_wrapper\n");
-		return -ENOMEM;
+	int ret;
+
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/read */
+	ret = lms_create_sysfs_file(lms, "read", lms->mailbox_cg2h_1,
+				    &lms->cg2h_read_one_attr_wrapper,
+				    lms_cg2h_read_mailbox1_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'read' in mailbox_cg2h_1");
+		return ret;
 	}
 
-	lms->cg2h_read_one_attr_wrapper->lms = lms;
-	lms->cg2h_read_one_attr_wrapper->dev_attr.attr.name = "read";
-	lms->cg2h_read_one_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->cg2h_read_one_attr_wrapper->dev_attr.show = lms_cg2h_read_mailbox1_show;
-	lms->cg2h_read_one_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->cg2h_read_one_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_cg2h_1, &lms->cg2h_read_one_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file read in mailbox_cg2h_1\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/timestamp */
+	ret = lms_create_sysfs_file(lms, "timestamp", lms->mailbox_cg2h_1,
+				    &lms->cg2h_timestamp_one_attr_wrapper,
+				    lms_cg2h_timestamp_mailbox1_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'timestamp' in mailbox_cg2h_1");
+		sysfs_remove_file(lms->mailbox_cg2h_1,
+				  &lms->cg2h_read_one_attr_wrapper.dev_attr.attr);
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/timestamp */
-	lms->cg2h_timestamp_one_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->cg2h_timestamp_one_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate cg2h_timestamp_one_attr_wrapper\n");
-		return -ENOMEM;
-	}
-
-	lms->cg2h_timestamp_one_attr_wrapper->lms = lms;
-	lms->cg2h_timestamp_one_attr_wrapper->dev_attr.attr.name = "timestamp";
-	lms->cg2h_timestamp_one_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->cg2h_timestamp_one_attr_wrapper->dev_attr.show = lms_cg2h_timestamp_mailbox1_show;
-	lms->cg2h_timestamp_one_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->cg2h_timestamp_one_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_cg2h_1,
-			      &lms->cg2h_timestamp_one_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file timestamp in mailbox_cg2h_1\n");
-		return -ENOMEM;
-	}
-
-	return 0;
+	return ret;
 }
 
 static int
 lms_init_mailboxes_cg2h_2(struct kobject *mailbox_cg2h_2, struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/read */
-	lms->cg2h_read_two_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->cg2h_read_two_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate cg2h_read_two_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->cg2h_read_two_attr_wrapper->lms = lms;
-	lms->cg2h_read_two_attr_wrapper->dev_attr.attr.name = "read";
-	lms->cg2h_read_two_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->cg2h_read_two_attr_wrapper->dev_attr.show = lms_cg2h_read_mailbox2_show;
-	lms->cg2h_read_two_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->cg2h_read_two_attr_wrapper->dev_attr.attr);
+	int ret;
 
-	if (sysfs_create_file(mailbox_cg2h_2, &lms->cg2h_read_two_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file read in mailbox_cg2h_2\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/read */
+	ret = lms_create_sysfs_file(lms, "read", lms->mailbox_cg2h_2,
+				    &lms->cg2h_read_two_attr_wrapper,
+				    lms_cg2h_read_mailbox2_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'read' in mailbox_cg2h_2");
+		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/timestamp */
-	lms->cg2h_timestamp_two_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->cg2h_timestamp_two_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate cg2h_timestamp_two_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->cg2h_timestamp_two_attr_wrapper->lms = lms;
-	lms->cg2h_timestamp_two_attr_wrapper->dev_attr.attr.name = "timestamp";
-	lms->cg2h_timestamp_two_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->cg2h_timestamp_two_attr_wrapper->dev_attr.show = lms_cg2h_timestamp_mailbox2_show;
-	lms->cg2h_timestamp_two_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->cg2h_timestamp_two_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_cg2h_2,
-			      &lms->cg2h_timestamp_two_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file timestamp in mailbox_cg2h_2\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/timestamp */
+	ret = lms_create_sysfs_file(lms, "timestamp", lms->mailbox_cg2h_2,
+				    &lms->cg2h_timestamp_two_attr_wrapper,
+				    lms_cg2h_timestamp_mailbox2_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'timestamp' in mailbox_cg2h_2");
+		sysfs_remove_file(lms->mailbox_cg2h_2,
+				  &lms->cg2h_read_two_attr_wrapper.dev_attr.attr);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
 lms_init_mailboxes_cg2h_3(struct kobject *mailbox_cg2h_3, struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/read */
-	lms->cg2h_read_three_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->cg2h_read_three_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate cg2h_read_three_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->cg2h_read_three_attr_wrapper->lms = lms;
-	lms->cg2h_read_three_attr_wrapper->dev_attr.attr.name = "read";
-	lms->cg2h_read_three_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->cg2h_read_three_attr_wrapper->dev_attr.show = lms_cg2h_read_mailbox3_show;
-	lms->cg2h_read_three_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->cg2h_read_three_attr_wrapper->dev_attr.attr);
+	int ret;
 
-	if (sysfs_create_file(mailbox_cg2h_3, &lms->cg2h_read_three_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file read in mailbox_cg2h_3\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/read */
+	ret = lms_create_sysfs_file(lms, "read", lms->mailbox_cg2h_3,
+				    &lms->cg2h_read_three_attr_wrapper,
+				    lms_cg2h_read_mailbox3_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'read' in mailbox_cg2h_3");
+		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/timestamp */
-	lms->cg2h_timestamp_three_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->cg2h_timestamp_three_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate cg2h_timestamp_three_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->cg2h_timestamp_three_attr_wrapper->lms = lms;
-	lms->cg2h_timestamp_three_attr_wrapper->dev_attr.attr.name = "timestamp";
-	lms->cg2h_timestamp_three_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->cg2h_timestamp_three_attr_wrapper->dev_attr.show = lms_cg2h_timestamp_mailbox3_show;
-	lms->cg2h_timestamp_three_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->cg2h_timestamp_three_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_cg2h_3,
-			      &lms->cg2h_timestamp_three_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file timestamp in mailbox_cg2h_3\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/timestamp */
+	ret = lms_create_sysfs_file(lms, "timestamp", lms->mailbox_cg2h_3,
+				    &lms->cg2h_timestamp_three_attr_wrapper,
+				    lms_cg2h_timestamp_mailbox3_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'timestamp' in mailbox_cg2h_3");
+		sysfs_remove_file(lms->mailbox_cg2h_3,
+				  &lms->cg2h_read_three_attr_wrapper.dev_attr.attr);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
@@ -1866,7 +1804,7 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 {
 	int ret = 0;
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/ */
 	lms->cg2h_mailboxes = kobject_create_and_add("cg2h_mailboxes", lms->mailboxes);
 	if (!lms->cg2h_mailboxes) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create cg2h_mailboxes kobject\n",
@@ -1874,7 +1812,7 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 		return -1;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/ */
 	lms->mailbox_cg2h_0 = kobject_create_and_add("mailbox_cg2h_0", lms->cg2h_mailboxes);
 	if (!lms->mailbox_cg2h_0) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create mailbox_cg2h_0 kobject\n",
@@ -1882,7 +1820,7 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 		return -1;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/ */
 	lms->mailbox_cg2h_1 = kobject_create_and_add("mailbox_cg2h_1", lms->cg2h_mailboxes);
 	if (!lms->mailbox_cg2h_1) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create mailbox_cg2h_1 kobject\n",
@@ -1890,7 +1828,7 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 		return -1;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/ */
 	lms->mailbox_cg2h_2 = kobject_create_and_add("mailbox_cg2h_2", lms->cg2h_mailboxes);
 	if (!lms->mailbox_cg2h_2) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create mailbox_cg2h_2 kobject\n",
@@ -1898,7 +1836,7 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 		return -1;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/ */
 	lms->mailbox_cg2h_3 = kobject_create_and_add("mailbox_cg2h_3", lms->cg2h_mailboxes);
 	if (!lms->mailbox_cg2h_3) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create mailbox_cg2h_3 kobject\n",
@@ -1907,8 +1845,8 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 	}
 
 	/* Create:
-	 * /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/cg2h_read_zero
-	 * /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/cg2h_timestamp_zero
+	 * /sys/devices/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/cg2h_read_zero
+	 * /sys/devices/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_0/cg2h_timestamp_zero
 	 */
 	ret = lms_init_mailboxes_cg2h_0(lms->mailbox_cg2h_0, lms);
 	if (ret < 0) {
@@ -1918,8 +1856,8 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 	}
 
 	/* Create:
-	 * /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/cg2h_read_one
-	 * /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/cg2h_timestamp_one
+	 * /sys/devices/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/cg2h_read_one
+	 * /sys/devices/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_1/cg2h_timestamp_one
 	 */
 	ret = lms_init_mailboxes_cg2h_1(lms->mailbox_cg2h_1, lms);
 	if (ret < 0) {
@@ -1929,8 +1867,8 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 	}
 
 	/* Create:
-	 * /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/cg2h_read_two
-	 * /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/cg2h_timestamp_two
+	 * /sys/devices/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/cg2h_read_two
+	 * /sys/devices/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_2/cg2h_timestamp_two
 	 */
 	ret = lms_init_mailboxes_cg2h_2(lms->mailbox_cg2h_2, lms);
 	if (ret < 0) {
@@ -1940,8 +1878,8 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 	}
 
 	/* Create:
-	 * /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/cg2h_read_three
-	 * /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/cg2h_timestamp_three
+	 * /sys/devices/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/cg2h_read_three
+	 * /sys/devices/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_cg2h_3/cg2h_timestamp_three
 	 */
 	ret = lms_init_mailboxes_cg2h_3(lms->mailbox_cg2h_3, lms);
 	if (ret < 0) {
@@ -1956,178 +1894,109 @@ lms_init_cg2h_mailboxes(struct lms_spi *lms)
 static int
 lms_init_h2cg_mailboxes0(struct kobject *mailbox_h2cg_0, struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/write */
-	lms->h2cg_write_zero_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->h2cg_write_zero_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate h2cg_write_zero_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->h2cg_write_zero_attr_wrapper->lms = lms;
-	lms->h2cg_write_zero_attr_wrapper->dev_attr.attr.name = "write";
-	lms->h2cg_write_zero_attr_wrapper->dev_attr.attr.mode = LMS_WRITE_ONLY_PERMISSION;
-	lms->h2cg_write_zero_attr_wrapper->dev_attr.show = NULL;
-	lms->h2cg_write_zero_attr_wrapper->dev_attr.store = lms_h2cg_write_mailbox0_store;
-	sysfs_attr_init(&lms->h2cg_write_zero_attr_wrapper->dev_attr.attr);
+	int ret;
 
-	if (sysfs_create_file(mailbox_h2cg_0, &lms->h2cg_write_zero_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file write in mailbox_h2cg_0\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/write */
+	ret = lms_create_sysfs_file(lms, "write", lms->mailbox_h2cg_0,
+				    &lms->h2cg_write_zero_attr_wrapper,
+				    NULL, lms_h2cg_write_mailbox0_store);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'write' in mailbox_h2cg_0");
+		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/status */
-	lms->h2cg_status_zero_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->h2cg_status_zero_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate h2cg_status_zero_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->h2cg_status_zero_attr_wrapper->lms = lms;
-	lms->h2cg_status_zero_attr_wrapper->dev_attr.attr.name = "status";
-	lms->h2cg_status_zero_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->h2cg_status_zero_attr_wrapper->dev_attr.show = lms_h2cg_status_mailbox0_show;
-	lms->h2cg_status_zero_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->h2cg_status_zero_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_h2cg_0, &lms->h2cg_status_zero_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file status in mailbox_h2cg_0\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/status */
+	ret = lms_create_sysfs_file(lms, "status", lms->mailbox_h2cg_0,
+				    &lms->h2cg_status_zero_attr_wrapper,
+				    lms_h2cg_status_mailbox0_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'status' in mailbox_h2cg_0");
+		sysfs_remove_file(lms->mailbox_h2cg_0,
+				  &lms->h2cg_write_zero_attr_wrapper.dev_attr.attr);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
 lms_init_h2cg_mailboxes1(struct kobject *mailbox_h2cg_1, struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_h2cg_1/write */
-	lms->h2cg_write_one_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->h2cg_write_one_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate h2cg_write_one_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->h2cg_write_one_attr_wrapper->lms = lms;
-	lms->h2cg_write_one_attr_wrapper->dev_attr.attr.name = "write";
-	lms->h2cg_write_one_attr_wrapper->dev_attr.attr.mode = LMS_WRITE_ONLY_PERMISSION;
-	lms->h2cg_write_one_attr_wrapper->dev_attr.show = NULL;
-	lms->h2cg_write_one_attr_wrapper->dev_attr.store = lms_h2cg_write_mailbox1_store;
-	sysfs_attr_init(&lms->h2cg_write_one_attr_wrapper->dev_attr.attr);
+	int ret;
 
-	if (sysfs_create_file(mailbox_h2cg_1, &lms->h2cg_write_one_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file write in mailbox_h2cg_1\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_h2cg_1/write */
+	ret = lms_create_sysfs_file(lms, "write", lms->mailbox_h2cg_1,
+				    &lms->h2cg_write_one_attr_wrapper,
+				    NULL, lms_h2cg_write_mailbox1_store);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'write' in mailbox_h2cg_1");
+		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_1/status */
-	lms->h2cg_status_one_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->h2cg_status_one_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate h2cg_status_one_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->h2cg_status_one_attr_wrapper->lms = lms;
-	lms->h2cg_status_one_attr_wrapper->dev_attr.attr.name = "status";
-	lms->h2cg_status_one_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->h2cg_status_one_attr_wrapper->dev_attr.show = lms_h2cg_status_mailbox1_show;
-	lms->h2cg_status_one_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->h2cg_status_one_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_h2cg_1, &lms->h2cg_status_one_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file status in mailbox_h2cg_1\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_1/status */
+	ret = lms_create_sysfs_file(lms, "status", lms->mailbox_h2cg_1,
+				    &lms->h2cg_status_one_attr_wrapper,
+				    lms_h2cg_status_mailbox1_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'status' in mailbox_h2cg_1");
+		sysfs_remove_file(lms->mailbox_h2cg_1,
+				  &lms->h2cg_write_one_attr_wrapper.dev_attr.attr);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
 lms_init_h2cg_mailboxes2(struct kobject *mailbox_h2cg_2, struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_h2cg_2/write */
-	lms->h2cg_write_two_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->h2cg_write_two_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate h2cg_write_two_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->h2cg_write_two_attr_wrapper->lms = lms;
-	lms->h2cg_write_two_attr_wrapper->dev_attr.attr.name = "write";
-	lms->h2cg_write_two_attr_wrapper->dev_attr.attr.mode = LMS_WRITE_ONLY_PERMISSION;
-	lms->h2cg_write_two_attr_wrapper->dev_attr.show = NULL;
-	lms->h2cg_write_two_attr_wrapper->dev_attr.store = lms_h2cg_write_mailbox2_store;
-	sysfs_attr_init(&lms->h2cg_write_two_attr_wrapper->dev_attr.attr);
+	int ret;
 
-	if (sysfs_create_file(mailbox_h2cg_2, &lms->h2cg_write_two_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file write in mailbox_h2cg_2\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_h2cg_2/write */
+	ret = lms_create_sysfs_file(lms, "write", lms->mailbox_h2cg_2,
+				    &lms->h2cg_write_two_attr_wrapper,
+				    NULL, lms_h2cg_write_mailbox2_store);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'write' in mailbox_h2cg_2");
+		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_2/status */
-	lms->h2cg_status_two_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->h2cg_status_two_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate h2cg_status_two_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->h2cg_status_two_attr_wrapper->lms = lms;
-	lms->h2cg_status_two_attr_wrapper->dev_attr.attr.name = "status";
-	lms->h2cg_status_two_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->h2cg_status_two_attr_wrapper->dev_attr.show = lms_h2cg_status_mailbox2_show;
-	lms->h2cg_status_two_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->h2cg_status_two_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_h2cg_2, &lms->h2cg_status_two_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file status in mailbox_h2cg_2\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_2/status */
+	ret = lms_create_sysfs_file(lms, "status", lms->mailbox_h2cg_2,
+				    &lms->h2cg_status_two_attr_wrapper,
+				    lms_h2cg_status_mailbox2_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'status' in mailbox_h2cg_2");
+		sysfs_remove_file(lms->mailbox_h2cg_2,
+				  &lms->h2cg_write_two_attr_wrapper.dev_attr.attr);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
 lms_init_h2cg_mailboxes3(struct kobject *mailbox_h2cg_3, struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/mailbox_h2cg_3/write */
-	lms->h2cg_write_three_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->h2cg_write_three_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate h2cg_write_three_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->h2cg_write_three_attr_wrapper->lms = lms;
-	lms->h2cg_write_three_attr_wrapper->dev_attr.attr.name = "write";
-	lms->h2cg_write_three_attr_wrapper->dev_attr.attr.mode = LMS_WRITE_ONLY_PERMISSION;
-	lms->h2cg_write_three_attr_wrapper->dev_attr.show = NULL;
-	lms->h2cg_write_three_attr_wrapper->dev_attr.store = lms_h2cg_write_mailbox3_store;
-	sysfs_attr_init(&lms->h2cg_write_three_attr_wrapper->dev_attr.attr);
+	int ret;
 
-	if (sysfs_create_file(mailbox_h2cg_3, &lms->h2cg_write_three_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file write in mailbox_h2cg_3\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/mailbox_h2cg_3/write */
+	ret = lms_create_sysfs_file(lms, "write", lms->mailbox_h2cg_3,
+				    &lms->h2cg_write_three_attr_wrapper,
+				    NULL, lms_h2cg_write_mailbox3_store);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'write' in mailbox_h2cg_3");
+		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_3/status */
-	lms->h2cg_status_three_attr_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->h2cg_status_three_attr_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate h2cg_status_three_attr_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->h2cg_status_three_attr_wrapper->lms = lms;
-	lms->h2cg_status_three_attr_wrapper->dev_attr.attr.name = "status";
-	lms->h2cg_status_three_attr_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->h2cg_status_three_attr_wrapper->dev_attr.show = lms_h2cg_status_mailbox3_show;
-	lms->h2cg_status_three_attr_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->h2cg_status_three_attr_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(mailbox_h2cg_3,
-			      &lms->h2cg_status_three_attr_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file status in mailbox_h2cg_3\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_3/status */
+	ret = lms_create_sysfs_file(lms, "status", lms->mailbox_h2cg_3,
+				    &lms->h2cg_status_three_attr_wrapper,
+				    lms_h2cg_status_mailbox3_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create sysfs file 'status' in mailbox_h2cg_3");
+		sysfs_remove_file(lms->mailbox_h2cg_3,
+				  &lms->h2cg_write_three_attr_wrapper.dev_attr.attr);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int
@@ -2135,7 +2004,7 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 {
 	int ret = 0;
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/ */
 	lms->h2cg_mailboxes = kobject_create_and_add("h2cg_mailboxes", lms->mailboxes);
 	if (!lms->h2cg_mailboxes) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create h2cg_mailboxes kobject\n",
@@ -2143,7 +2012,7 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 		return -1;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/ */
 	lms->mailbox_h2cg_0 = kobject_create_and_add("mailbox_h2cg_0", lms->h2cg_mailboxes);
 	if (!lms->mailbox_h2cg_0) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create mailbox_h2cg_0 kobject\n",
@@ -2151,7 +2020,7 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 		return -1;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_1/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_1/ */
 	lms->mailbox_h2cg_1 = kobject_create_and_add("mailbox_h2cg_1", lms->h2cg_mailboxes);
 	if (!lms->mailbox_h2cg_1) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create mailbox_h2cg_1 kobject\n",
@@ -2159,7 +2028,7 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 		return -1;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_2/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_2/ */
 	lms->mailbox_h2cg_2 = kobject_create_and_add("mailbox_h2cg_2", lms->h2cg_mailboxes);
 	if (!lms->mailbox_h2cg_2) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create mailbox_h2cg_2 kobject\n",
@@ -2167,7 +2036,7 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 		return -1;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_3/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_3/ */
 	lms->mailbox_h2cg_3 = kobject_create_and_add("mailbox_h2cg_3", lms->h2cg_mailboxes);
 	if (!lms->mailbox_h2cg_3) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create mailbox_h2cg_2 kobject\n",
@@ -2176,8 +2045,8 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 	}
 
 	/* Create:
-	 * /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/h2cg_read_zero
-	 * /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/h2cg_timestamp_zero
+	 * /sys/devices/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/h2cg_read_zero
+	 * /sys/devices/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_0/h2cg_timestamp_zero
 	 */
 	ret = lms_init_h2cg_mailboxes0(lms->mailbox_h2cg_0, lms);
 	if (ret < 0) {
@@ -2187,8 +2056,8 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 	}
 
 	/* Create:
-	 * /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_1/h2cg_read_one
-	 * /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_1/h2cg_timestamp_one
+	 * /sys/devices/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_1/h2cg_read_one
+	 * /sys/devices/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_1/h2cg_timestamp_one
 	 */
 	ret = lms_init_h2cg_mailboxes1(lms->mailbox_h2cg_1, lms);
 	if (ret < 0) {
@@ -2198,8 +2067,8 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 	}
 
 	/* Create:
-	 * /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_2/h2cg_read_two
-	 * /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_2/h2cg_timestamp_two
+	 * /sys/devices/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_2/h2cg_read_two
+	 * /sys/devices/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_2/h2cg_timestamp_two
 	 */
 	ret = lms_init_h2cg_mailboxes2(lms->mailbox_h2cg_2, lms);
 	if (ret < 0) {
@@ -2209,8 +2078,8 @@ lms_init_h2cg_mailboxes(struct lms_spi *lms)
 	}
 
 	/* Create:
-	 * /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_3/h2cg_read_three
-	 * /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/mailbox_h2cg_3/h2cg_timestamp_three
+	 * /sys/devices/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_3/h2cg_read_three
+	 * /sys/devices/<netdev_name>/Mailboxes/h2cg_mailboxes/mailbox_h2cg_3/h2cg_timestamp_three
 	 */
 	ret = lms_init_h2cg_mailboxes3(lms->mailbox_h2cg_3, lms);
 	if (ret < 0) {
@@ -2227,7 +2096,7 @@ lms_init_sysfs_mailboxes(struct lms_spi *lms)
 {
 	int ret = 0;
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/ */
 	lms->mailboxes = kobject_create_and_add("Mailboxes", lms->lms_eth2spi);
 	if (!lms->mailboxes) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create Mailboxes kobject\n",
@@ -2235,7 +2104,7 @@ lms_init_sysfs_mailboxes(struct lms_spi *lms)
 		return -ENOMEM;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/cg2h_mailboxes/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/cg2h_mailboxes/ */
 	ret = lms_init_cg2h_mailboxes(lms);
 	if (ret < 0) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create CG2H mailboxes\n",
@@ -2243,7 +2112,7 @@ lms_init_sysfs_mailboxes(struct lms_spi *lms)
 		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes/h2cg_mailboxes/ */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes/h2cg_mailboxes/ */
 	ret = lms_init_h2cg_mailboxes(lms);
 	if (ret < 0) {
 		netdev_err(lms->net_dev, "%s sysfs error: failed to create H2CG mailboxes\n",
@@ -2270,26 +2139,14 @@ lms_statistics_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf
 static int
 lms_init_sysfs_statistics(struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/statistics */
-	lms->statistics_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->statistics_wrapper) {
-		netdev_err(lms->net_dev, "Failed to allocate statistics_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->statistics_wrapper->lms = lms;
-	lms->statistics_wrapper->dev_attr.attr.name = "statistics";
-	lms->statistics_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->statistics_wrapper->dev_attr.show = lms_statistics_show;
-	lms->statistics_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->statistics_wrapper->dev_attr.attr);
+	int ret;
 
-	if (sysfs_create_file(lms->lms_eth2spi, &lms->statistics_wrapper->dev_attr.attr)) {
-		netdev_err(lms->net_dev, "Cannot create sysfs file statistics\n");
-		return -ENOMEM;
-	}
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/statistics */
+	ret = lms_create_sysfs_file(lms, "statistics", lms->lms_eth2spi,
+				    &lms->statistics_wrapper,
+				    lms_statistics_show, NULL);
 
-	return 0;
+	return ret;
 }
 
 static ssize_t
@@ -2313,151 +2170,63 @@ lms_modem_status_show(struct kobject *kobj, struct kobj_attribute *attr, char *b
 	return 0;
 }
 
-#ifdef LMS_DEBUG
 static ssize_t
-lms_debug_write_store(struct kobject *kobj, struct kobj_attribute *attr,
-		      const char *buf, size_t count)
+lms_legacy_modem_status_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	struct lms_attr_wrapper *this_wrapper =
-		container_of(attr, struct lms_attr_wrapper, dev_attr);
-
-	lms_spi_write_data(this_wrapper->lms, buf, count);
-	return count;
+	if (lms_probe_counter != 1)
+		return -EBUSY;
+	else
+		return lms_modem_status_show(kobj, attr, buf);
 }
-
-static ssize_t
-lms_debug_update_gp_irq_flag(struct kobject *kobj, struct kobj_attribute *attr,
-			     const char *buf, size_t count)
-{
-	struct lms_attr_wrapper *this_wrapper =
-		container_of(attr, struct lms_attr_wrapper, dev_attr);
-	int updated_flag = 0;
-
-	if (buf[0] == '1')
-		updated_flag = 1;
-
-	atomic_set(&this_wrapper->lms->stat_intr_req, updated_flag);
-	/* Wake up the SPI thread */
-	if (this_wrapper->lms->spi_thread)
-		wake_up_process(this_wrapper->lms->spi_thread);
-
-	return count;
-}
-
-static ssize_t
-lms_debug_read_irq(struct kobject *kobj, struct kobj_attribute *attr,
-		   char *buf)
-{
-	struct lms_attr_wrapper *this_wrapper =
-		container_of(attr, struct lms_attr_wrapper, dev_attr);
-	int ret = gpiod_get_value(gpio_to_desc(this_wrapper->lms->stat_gpio));
-	int ret2 = gpiod_get_value(gpio_to_desc(this_wrapper->lms->rx_gpio));
-
-	return sprintf(buf, "gp_irq=%d stat_intr_req=%d rx_irq=%d rx_intr_req=%d",
-		       (ret == 1), atomic_read(&this_wrapper->lms->stat_intr_req),
-		       (ret2 == 1), atomic_read(&this_wrapper->lms->rx_intr_req));
-}
-#endif
 
 static int
 lms_init_sysfs_notifications_flow(struct lms_spi *lms)
 {
-	/* Create /sys/devices/lms_eth2spi/modem_status */
-	lms->modem_status_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->modem_status_wrapper) {
-		dev_err(&lms->spi_dev->dev, "Failed to allocate modem_status_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->modem_status_wrapper->lms = lms;
-	lms->modem_status_wrapper->dev_attr.attr.name = "modem_status";
-	lms->modem_status_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->modem_status_wrapper->dev_attr.show = lms_modem_status_show;
-	lms->modem_status_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->modem_status_wrapper->dev_attr.attr);
+	int ret;
 
-	if (sysfs_create_file(lms->lms_eth2spi, &lms->modem_status_wrapper->dev_attr.attr)) {
-		dev_err(&lms->spi_dev->dev, "Cannot create sysfs file statistics\n");
-		return -ENOMEM;
-	}
-#ifdef LMS_DEBUG
-	/* Create /sys/devices/lms_eth2spi/debug_write */
-	lms->debug_write_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->debug_write_wrapper) {
-		dev_err(&lms->spi_dev->dev, "Failed to allocate debug_write_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->debug_write_wrapper->lms = lms;
-	lms->debug_write_wrapper->dev_attr.attr.name = "debug_write";
-	lms->debug_write_wrapper->dev_attr.attr.mode = LMS_WRITE_ONLY_PERMISSION;
-	lms->debug_write_wrapper->dev_attr.show = NULL;
-	lms->debug_write_wrapper->dev_attr.store = lms_debug_write_store;
-	sysfs_attr_init(&lms->debug_write_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(lms->lms_eth2spi, &lms->debug_write_wrapper->dev_attr.attr)) {
-		dev_err(&lms->spi_dev->dev, "Cannot create sysfs file debug_write_wrapper\n");
-		return -ENOMEM;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/modem_status */
+	ret = lms_create_sysfs_file(lms, "modem_status", lms->lms_eth2spi,
+				    &lms->modem_status_wrapper,
+				    lms_modem_status_show, NULL);
+	if (ret) {
+		netdev_err(lms->net_dev, "Cannot create modem_status sysfs file");
+		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/debug_update_gp_irq_flag */
-	lms->debug_update_gp_irq_flag_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->debug_update_gp_irq_flag_wrapper) {
-		dev_err(&lms->spi_dev->dev, "Failed to allocate debug_update_gp_irq_flag_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->debug_update_gp_irq_flag_wrapper->lms = lms;
-	lms->debug_update_gp_irq_flag_wrapper->dev_attr.attr.name = "debug_update_gp_irq_flag";
-	lms->debug_update_gp_irq_flag_wrapper->dev_attr.attr.mode = LMS_WRITE_ONLY_PERMISSION;
-	lms->debug_update_gp_irq_flag_wrapper->dev_attr.show = NULL;
-	lms->debug_update_gp_irq_flag_wrapper->dev_attr.store = lms_debug_update_gp_irq_flag;
-	sysfs_attr_init(&lms->debug_update_gp_irq_flag_wrapper->dev_attr.attr);
+	mutex_lock(&lms_global_lock);
+	lms_probe_counter++;
+	if (lms_probe_counter == 1)
+		lms->legacy_modem_status_owner = true;
+	mutex_unlock(&lms_global_lock);
 
-	if (sysfs_create_file(lms->lms_eth2spi,
-			      &lms->debug_update_gp_irq_flag_wrapper->dev_attr.attr)) {
-		dev_err(&lms->spi_dev->dev, "Cannot create sysfs file debug_update_gp_irq_flag_wrapper\n");
-		return -ENOMEM;
+	/* Create legacy /sys/devices/lms_eth2spi/modem_status */
+	if (lms->legacy_modem_status_owner) {
+		ret = lms_create_sysfs_file(lms, "modem_status", &lms_root_device->kobj,
+					    &lms->legacy_modem_status_wrapper,
+					    lms_legacy_modem_status_show, NULL);
+		if (ret) {
+			netdev_err(lms->net_dev, "Cannot create legacy modem_status sysfs file");
+			sysfs_remove_file(lms->lms_eth2spi,
+					  &lms->modem_status_wrapper.dev_attr.attr);
+		}
 	}
 
-	/* Create /sys/devices/lms_eth2spi/debug_read_irq */
-	lms->debug_read_irq_wrapper =
-		kmalloc(sizeof(struct lms_attr_wrapper), GFP_KERNEL);
-	if (!lms->debug_read_irq_wrapper) {
-		dev_err(&lms->spi_dev->dev, "Failed to allocate debug_read_irq_wrapper\n");
-		return -ENOMEM;
-	}
-	lms->debug_read_irq_wrapper->lms = lms;
-	lms->debug_read_irq_wrapper->dev_attr.attr.name = "debug_read_irq";
-	lms->debug_read_irq_wrapper->dev_attr.attr.mode = LMS_READ_ONLY_PERMISSION;
-	lms->debug_read_irq_wrapper->dev_attr.show = lms_debug_read_irq;
-	lms->debug_read_irq_wrapper->dev_attr.store = NULL;
-	sysfs_attr_init(&lms->debug_read_irq_wrapper->dev_attr.attr);
-
-	if (sysfs_create_file(lms->lms_eth2spi, &lms->debug_read_irq_wrapper->dev_attr.attr)) {
-		dev_err(&lms->spi_dev->dev, "Cannot create sysfs file debug_read_irq_wrapper\n");
-		return -ENOMEM;
-	}
-#endif
-
-	return 0;
+	return ret;
 }
 
 static int
 lms_init_notif_sysfs(struct lms_spi *lms)
 {
-	struct device *my_dev;
 	int ret = 0;
 
-	/* Create /sys/devices/lms_eth2spi/ */
-	my_dev = root_device_register(LMS_DRV_NAME);
-	if (!my_dev) {
-		dev_err(&lms->spi_dev->dev, "lms_init_sysfs sysfs error: failed to root_device_register\n");
-		return ret;
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/ */
+	lms->lms_eth2spi = kobject_create_and_add(lms->net_dev->name, &lms_root_device->kobj);
+	if (!lms->lms_eth2spi) {
+		dev_err(&lms->spi_dev->dev, "sysfs error: failed to create Mailboxes kobject");
+		return -ENOMEM;
 	}
-	lms->lms_eth2spi = &my_dev->kobj;
 
-	/* Create /sys/devices/lms_eth2spi/modem_status
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/modem_status
 	 */
 	ret = lms_init_sysfs_notifications_flow(lms);
 	if (ret < 0) {
@@ -2475,8 +2244,7 @@ lms_spi_netdev_close(struct net_device *dev)
 	netif_stop_queue(dev);
 	lms_remove_mailboxes_sysfs(lms);
 	sysfs_remove_file(lms->lms_eth2spi,
-			  &lms->statistics_wrapper->dev_attr.attr);
-	kfree(lms->statistics_wrapper);
+			  &lms->statistics_wrapper.dev_attr.attr);
 	kthread_stop(lms->spi_thread);
 	lms->spi_thread = NULL;
 	cancel_work_sync(&lms->rx_completion_work);
@@ -2495,14 +2263,14 @@ int lms_spi_netdev_open(struct net_device *dev)
 	if (!lms)
 		return -EINVAL;
 
-	/* Create /sys/devices/lms_eth2spi/Mailboxes */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/Mailboxes */
 	ret = lms_init_sysfs_mailboxes(lms);
 	if (ret < 0) {
 		netdev_err(lms->net_dev, "lms_init_sysfs sysfs error: failed to create mailboxes\n");
 		return ret;
 	}
 
-	/* Create /sys/devices/lms_eth2spi/statistics */
+	/* Create /sys/devices/lms_eth2spi/<netdev_name>/statistics */
 	ret = lms_init_sysfs_statistics(lms);
 	if (ret < 0) {
 		lms_remove_mailboxes_sysfs(lms);
@@ -2514,8 +2282,7 @@ int lms_spi_netdev_open(struct net_device *dev)
 	if (ret < 0) {
 		lms_remove_mailboxes_sysfs(lms);
 		sysfs_remove_file(lms->lms_eth2spi,
-				  &lms->statistics_wrapper->dev_attr.attr);
-		kfree(lms->statistics_wrapper);
+				  &lms->statistics_wrapper.dev_attr.attr);
 		netdev_err(lms->net_dev, "kfifo_alloc error\n");
 		return ret;
 	}
@@ -2525,8 +2292,7 @@ int lms_spi_netdev_open(struct net_device *dev)
 		kfifo_free(&lms->rx_completion_fifo);
 		lms_remove_mailboxes_sysfs(lms);
 		sysfs_remove_file(lms->lms_eth2spi,
-				  &lms->statistics_wrapper->dev_attr.attr);
-		kfree(lms->statistics_wrapper);
+				  &lms->statistics_wrapper.dev_attr.attr);
 		netdev_err(dev, "%s: Unable to create the rx completion workqueue!\n",
 			   LMS_DRV_NAME);
 		return ret;
@@ -2542,8 +2308,7 @@ int lms_spi_netdev_open(struct net_device *dev)
 		kfifo_free(&lms->rx_completion_fifo);
 		lms_remove_mailboxes_sysfs(lms);
 		sysfs_remove_file(lms->lms_eth2spi,
-				  &lms->statistics_wrapper->dev_attr.attr);
-		kfree(lms->statistics_wrapper);
+				  &lms->statistics_wrapper.dev_attr.attr);
 		netdev_err(dev, "%s: Unable to start the SPI thread!\n",
 			   LMS_DRV_NAME);
 		return PTR_ERR(lms->spi_thread);
@@ -2597,43 +2362,58 @@ static const struct net_device_ops lms_spi_netdev_ops = {
 static void
 lms_remove_notif_sysfs(struct lms_spi *lms)
 {
-	struct device *my_dev;
+	sysfs_remove_file(lms->lms_eth2spi,
+			  &lms->modem_status_wrapper.dev_attr.attr);
+	kobject_put(lms->lms_eth2spi);
 
-	sysfs_remove_file(lms->lms_eth2spi,
-			  &lms->modem_status_wrapper->dev_attr.attr);
-	kfree(lms->modem_status_wrapper);
-#ifdef LMS_DEBUG
-	sysfs_remove_file(lms->lms_eth2spi,
-			  &lms->debug_write_wrapper->dev_attr.attr);
-	kfree(lms->debug_write_wrapper);
-	sysfs_remove_file(lms->lms_eth2spi,
-			  &lms->debug_update_gp_irq_flag_wrapper->dev_attr.attr);
-	kfree(lms->debug_update_gp_irq_flag_wrapper);
-	sysfs_remove_file(lms->lms_eth2spi,
-			  &lms->debug_read_irq_wrapper->dev_attr.attr);
-	kfree(lms->debug_read_irq_wrapper);
-#endif
-	my_dev = container_of(lms->lms_eth2spi, struct device, kobj);
-	root_device_unregister(my_dev);
+	mutex_lock(&lms_global_lock);
+	lms_probe_counter--;
+	mutex_unlock(&lms_global_lock);
+	if (lms->legacy_modem_status_owner)
+		sysfs_remove_file(&lms_root_device->kobj,
+				  &lms->legacy_modem_status_wrapper.dev_attr.attr);
 }
 
 static int
 lms_spi_netdev_setup(struct lms_spi *lms, struct net_device *dev)
 {
-	char net_dev_name[6];
+	char net_dev_name[IFNAMSIZ];
 	struct net_device *netdev = NULL;
+	const char *iface_prefix;
+	u32 iface_idx;
+	bool is_default_idx = false;
+	int ret;
 
-	strcpy(net_dev_name, LMS_DEFAULT_NETDEV_NAME);
+	ret = of_property_read_string(lms->spi_dev->dev.of_node, "iface-name-prefix", &iface_prefix);
+	if (ret)
+		iface_prefix = LMS_DEFAULT_NETDEV_NAME_PREFIX;
+
+	ret = of_property_read_u32(lms->spi_dev->dev.of_node, "iface-idx", &iface_idx);
+	if (ret) {
+		iface_idx = 0;
+		is_default_idx = true;
+	}
+
+	snprintf(net_dev_name, sizeof(net_dev_name), "%s%u", iface_prefix, iface_idx);
+
 	dev->netdev_ops = &lms_spi_netdev_ops;
 	netdev = dev_get_by_name(&init_net, net_dev_name);
-	while (netdev) {
-		dev_put(netdev);
-		if (net_dev_name[4] == '9') {
-			netdev_err(dev, "could not find free netdev name");
-			return -1;
+	if (is_default_idx == true)
+	{
+		while (netdev) {
+			dev_put(netdev);
+			if (++iface_idx == 10) {
+				netdev_err(dev, "could not find free netdev name");
+				return -1;
+			}
+			snprintf(net_dev_name, sizeof(net_dev_name), "%s%u", iface_prefix, iface_idx);
+			netdev = dev_get_by_name(&init_net, net_dev_name);
 		}
-		net_dev_name[4]++;
-		netdev = dev_get_by_name(&init_net, net_dev_name);
+	}
+	else if (netdev)
+	{
+		netdev_err(dev, "could not allocate net dev name: %s", net_dev_name);
+		return -1;
 	}
 
 	strcpy(dev->name, net_dev_name);
@@ -2922,20 +2702,6 @@ int lms_spi_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	/* Create notification sysfs */
-	ret = lms_init_notif_sysfs(lms);
-	if (ret < 0) {
-		dev_err(&spi->dev, "%s: Unable to init notification sysfs\n",
-			LMS_DRV_NAME);
-		lms_CG2H_mailboxs_uninit(lms);
-		free_irq(lms->stat_irq, lms);
-		gpio_free(lms->stat_gpio);
-		free_irq(lms->rx_irq, lms);
-		gpio_free(lms->rx_gpio);
-		free_lms(lms);
-		return ret;
-	}
-
 	lms->spi_state = SPI_OK;
 	if (lms_check_stat_zero(lms, true)) {
 		dev_err(&spi->dev, "%s: Status 0 sanity failed\n", LMS_DRV_NAME);
@@ -2952,7 +2718,6 @@ int lms_spi_probe(struct spi_device *spi)
 
 	lms_spi_devs = alloc_etherdev(sizeof(struct lms_spi *));
 	if (!lms_spi_devs) {
-		lms_remove_notif_sysfs(lms);
 		lms_CG2H_mailboxs_uninit(lms);
 		free_irq(lms->stat_irq, lms);
 		gpio_free(lms->stat_gpio);
@@ -2965,7 +2730,6 @@ int lms_spi_probe(struct spi_device *spi)
 	ret = lms_spi_netdev_setup(lms, lms_spi_devs);
 	if (ret) {
 		free_netdev(lms_spi_devs);
-		lms_remove_notif_sysfs(lms);
 		lms_CG2H_mailboxs_uninit(lms);
 		free_irq(lms->stat_irq, lms);
 		gpio_free(lms->stat_gpio);
@@ -2980,6 +2744,21 @@ int lms_spi_probe(struct spi_device *spi)
 	*lms_p = lms;
 
 	lms->net_dev = lms_spi_devs;
+
+	/* Create notification sysfs */
+	ret = lms_init_notif_sysfs(lms);
+	if (ret < 0) {
+		dev_err(&spi->dev, "%s: Unable to init notification sysfs\n",
+			LMS_DRV_NAME);
+		free_netdev(lms_spi_devs);
+		lms_CG2H_mailboxs_uninit(lms);
+		free_irq(lms->stat_irq, lms);
+		gpio_free(lms->stat_gpio);
+		free_irq(lms->rx_irq, lms);
+		gpio_free(lms->rx_gpio);
+		free_lms(lms);
+		return ret;
+	}
 
 #if KERNEL_VERSION(5, 13, 0) <=  LINUX_VERSION_CODE
 	ret = of_get_mac_address(spi->dev.of_node, mac);
@@ -3044,6 +2823,8 @@ int lms_spi_probe(struct spi_device *spi)
 		return -EFAULT;
 	}
 
+	dev_info(&spi->dev, "Registered net device: %s", lms->net_dev->name);
+
 	return 0;
 }
 
@@ -3091,14 +2872,29 @@ static struct spi_driver lms_spi_driver = {
 
 static int lms_spi_init_driver(struct spi_driver *sdrv)
 {
+	int ret;
+
 	pr_info("Initialising %s version %s\n", LMS_DRV_NAME, LMS_SPI_DRV_VERSION);
-	return spi_register_driver(sdrv);
+
+	lms_probe_counter = 0;
+	lms_root_device = root_device_register(LMS_DRV_NAME);
+	if (IS_ERR(lms_root_device)) {
+		return PTR_ERR(lms_root_device);
+	}
+
+	ret = spi_register_driver(sdrv);
+	if (ret) {
+		root_device_unregister(lms_root_device);
+	}
+
+	return ret;
 }
 
 static void lms_spi_exit_driver(struct spi_driver *sdrv)
 {
 	pr_info("Exiting %s version %s\n", LMS_DRV_NAME, LMS_SPI_DRV_VERSION);
 	spi_unregister_driver(sdrv);
+	root_device_unregister(lms_root_device);
 }
 
 MODULE_DESCRIPTION("Lumissil ETH2SPI Driver");
