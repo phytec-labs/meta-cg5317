@@ -13,6 +13,8 @@ SRC_URI = " \
 	file://resetmodem.sh \
 	file://FW.bin \
 	file://config.bin \
+	file://spi_sta_config.bin \
+	file://spi_cco_config.bin \
 	file://examples \
 	file://COPYING.MIT \
 	file://evse.ini \
@@ -46,6 +48,8 @@ do_install() {
 
 	install -d ${D}/lib/firmware
 	install -m 0644 ${WORKDIR}/config.bin ${D}/lib/firmware
+	install -m 0644 ${WORKDIR}/spi_sta_config.bin ${D}/lib/firmware
+	install -m 0644 ${WORKDIR}/spi_cco_config.bin ${D}/lib/firmware
 	install -m 0644 ${WORKDIR}/FW.bin ${D}/lib/firmware
 }
 
