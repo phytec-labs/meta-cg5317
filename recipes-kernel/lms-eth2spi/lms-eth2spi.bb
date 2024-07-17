@@ -7,9 +7,9 @@ MODULE_NAME = "lms_eth2spi"
 inherit module
 
 SRC_URI = " \
-	file://Makefile \
-	file://lms_eth2spi.c \
 	file://COPYING \
+	file://lms_eth2spi.c \
+	file://Makefile \
 "
 
 RM_WORK_EXCLUDE += "${PN}"

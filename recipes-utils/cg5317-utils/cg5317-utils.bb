@@ -9,16 +9,16 @@ SRC_URI = " \
 	file://cg5317-bringup.service \
 	file://cg5317-bringup.sh \
 	file://cg5317-host.service \
-	file://mtbf-resets.service \
-	file://resetmodem.sh \
-	file://FW.bin \
 	file://config.bin \
-	file://spi_sta_config.bin \
-	file://spi_cco_config.bin \
-	file://examples \
 	file://COPYING.MIT \
 	file://evse.ini \
+	file://examples \
+	file://FW.bin \
+	file://mtbf-resets.service \
 	file://pev.ini \
+	file://resetmodem.sh \
+	file://spi_sta_config.bin \
+	file://spi_cco_config.bin \
 "
 
 RDEPENDS:${PN} += "libgpiod"
@@ -33,11 +33,14 @@ do_install() {
 	install -m 0644 ${WORKDIR}/pev.ini ${D}${sysconfdir}/
 
 	install -d ${D}${sysconfdir}/systemd/system/multi-user.target.wants
-	ln -sf ${D}${sysconfdir}/systemd/system/cg5317-bringup.service ${D}${sysconfdir}/systemd/system/multi-user.target.wants/
-	ln -sf ${D}${sysconfdir}/systemd/system/cg5317-host.service ${D}${sysconfdir}/systemd/system/multi-user.target.wants/
+	ln -sf ${D}${sysconfdir}/systemd/system/cg5317-bringup.service \
+		${D}${sysconfdir}/systemd/system/multi-user.target.wants/
+	ln -sf ${D}${sysconfdir}/systemd/system/cg5317-host.service \
+		${D}${sysconfdir}/systemd/system/multi-user.target.wants/
 
 	install -d ${D}${sysconfdir}/systemd/system/default.target.wants
-	ln -sf ${D}${sysconfdir}/systemd/system/mtbf-resets.service ${D}${sysconfdir}/systemd/system/default.target.wants/
+	ln -sf ${D}${sysconfdir}/systemd/system/mtbf-resets.service \
+		${D}${sysconfdir}/systemd/system/default.target.wants/
 
 	install -m 0755 ${WORKDIR}/resetmodem.sh ${D}${sysconfdir}/systemd/system
 	install -m 0755 ${WORKDIR}/cg5317-bringup.sh ${D}${sysconfdir}/systemd/system
