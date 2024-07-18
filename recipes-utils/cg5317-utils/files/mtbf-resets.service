@@ -1,9 +1,0 @@
-[Unit]
-
-[Service]
-ExecStart=/etc/systemd/system/resetmodem.sh
-User=root
-
-[Install]
-WantedBy=default.target
-
