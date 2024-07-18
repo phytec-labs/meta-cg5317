@@ -3,7 +3,7 @@ Description=cg5317 Interface Bringup Service
 After=network.target
 
 [Service]
-ExecStart=/etc/systemd/system/cg5317-bringup.sh
+ExecStart=/usr/sbin/ip link set seth0 up
 User=root
 Type=oneshot
 
