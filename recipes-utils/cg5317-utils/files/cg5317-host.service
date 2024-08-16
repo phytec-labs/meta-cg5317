@@ -6,7 +6,7 @@ After=cg5317-bringup.service
 User=root
 Group=root
 Type=forking
-ExecStart=/root/examples/host_loading_service/host_loading_service -g gpiochip0 -o 36
+ExecStart=/root/examples/host_loading_service/host_loading_service -g gpiochip1 -o 36
 
 [Install]
 WantedBy=multi-user.target
