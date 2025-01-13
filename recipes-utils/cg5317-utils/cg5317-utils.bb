@@ -5,6 +5,9 @@ LIC_FILES_CHKSUM = "file://../COPYING.MIT;md5=3da9cfbcb788c80a0384361b4de20420"
 
 ROOT_HOME = "/root"
 
+DEPENDS += "libgpiod"
+RDEPENDS:${PN} = "libgpiod (< 2.1)"
+
 SRC_URI = " \
 	file://cg5317-bringup.service \
 	file://cg5317-host.service \
@@ -18,9 +21,6 @@ SRC_URI = " \
 	file://spi_cco_config.bin \
 "
 
-# libgpiod_2.x.x deploys libgpiod.so.3
-RDEPENDS:${PN}:append = "libgpiod (<= 2.0.0)"
-
 do_install() {
 	install -d ${D}${sysconfdir}/systemd/system/
 	install -m 0644 ${WORKDIR}/cg5317-bringup.service ${D}${sysconfdir}/systemd/system
@@ -30,9 +30,9 @@ do_install() {
 	install -m 0644 ${WORKDIR}/pev.ini ${D}${sysconfdir}/
 
 	install -d ${D}${sysconfdir}/systemd/system/multi-user.target.wants
-	ln -sf ${D}${sysconfdir}/systemd/system/cg5317-bringup.service \
+	ln -sf ${sysconfdir}/systemd/system/cg5317-bringup.service \
 		${D}${sysconfdir}/systemd/system/multi-user.target.wants/
-	ln -sf ${D}${sysconfdir}/systemd/system/cg5317-host.service \
+	ln -sf ${sysconfdir}/systemd/system/cg5317-host.service \
 		${D}${sysconfdir}/systemd/system/multi-user.target.wants/
 
 	install -d ${D}${sysconfdir}/systemd/system/default.target.wants
