@@ -1,7 +1,8 @@
 # Table of Contents
 	1. Introduction
-	2. Testing all Components
-	3. Host Software
+	2. Adding Repo to Yocto
+	3. Testing all Components
+	4. Host Software
 
 # 1 - Introduction
 This repo holds the tools necassary to enable SPI communication between PHYTEC's supported dev kits
@@ -13,7 +14,29 @@ There are some key items included in this meta-layer.
 
 - **Host Load Services** - firmware loading services that are used on bootup when the lms is in host-load moad.
 
-# 2 - Testing all Components
+# 2 - Adding Repo to Yocto
+Checkout this repo to your `yocto-project/sources/` directory and checkout the correct branch:
+
+``` bash
+git clone git@github.com:phytec-labs/meta-cg5317.git
+cd meta-cg5317
+git checkout scarthgap
+```
+
+We can now add the packages we would like to install to our `yocto-project/build/conf/local.conf` file:
+
+``` bash
+IMAGE_INSTALL:append = "\
+	open-plc-utils \
+	lms-eth2spi \
+	libgpiod \
+	cg5317-utils \
+"
+```
+
+Finally build your image.
+
+# 3 - Testing all Components
 
 1. Check to see if PLC device connected successfully.
 
@@ -39,7 +62,7 @@ root@phyboard-lyra-am62xx-2:~# dmesg | grep spi
 2. At this point the hardware is setup and the PLC device is connected and waiting for application software to write/read from the device. Refer to and contact Lumissil for specific device documentation:
 https://www.lumissil.com/applications/communication/electric-vehicles-charging/vehicle-charging/is32cg5317
 
-# 3 - Host Software
+# 4 - Host Software
 
 1. The host software example binaries were cross-compiled and included in this layer.
 
