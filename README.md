@@ -1,1 +1,1 @@
-Main branch is intentionally left blank, please select desired Yocto distribution from branch dropdown.
+This repository has been moved. Please visit https://github.com/phytec/meta-lumissil-greenphy/ for the latest version.
